@@ -112,7 +112,7 @@ void handle_ai_command(char *input) {
     
     char *response = get_ai_command(clean_input);
     if(response) {
-        if(strstr(response, "COMMAND:")) {
+		if(strstr(response, "COMMAND:")) {
             char *cmd = strstr(response, "COMMAND:") + 8;
             cmd[strcspn(cmd, "\n")] = 0;
             
@@ -124,20 +124,31 @@ void handle_ai_command(char *input) {
                 _puts("\n");
                 char **args = splitstring(cmd, " \n");
                 expand_tilde(args);
-                if(contains_pipes(cmd)) {
-                    char ***pipeline = parse_pipeline(cmd);
-                    execute_pipeline(pipeline);
-                    for(int i=0; pipeline[i]; i++) freearv(pipeline[i]);
-                    free(pipeline);
+
+                // Check if the command is a built-in
+                void (*builtin_func)(char **) = checkbuild(args);
+                if (builtin_func) {
+                    builtin_func(args);
                 } else {
-                    execute(args);
+                    if(contains_pipes(cmd)) {
+                        char ***pipeline = parse_pipeline(cmd);
+                        execute_pipeline(pipeline);
+                        for(int i=0; pipeline[i]; i++) freearv(pipeline[i]);
+                        free(pipeline);
+                    } else {
+                        execute(args);
+                    }
                 }
                 freearv(args);
             }
-        }
-        else if(strstr(response, "EXPLAIN:")) {
-            handle_explanation(response + 8);
-        }
+		}
+		else if(strstr(response, "EXPLAIN:")) {
+			char *explanation = strstr(response, "EXPLAIN:") + 9;
+			explanation[strcspn(explanation, "\n")] = 0;
+			handle_explanation(explanation);
+		} else {
+			_puts("Unknown response format\n");
+		}
         free(response);
     } else {
         _puts("AI request failed\n");

@@ -15,6 +15,10 @@ void cd_builtin(char **args) {
 
     if (!dir) {
         dir = getenv("HOME");
+		if (!dir) {
+            _puts("cd: No home directory found\n");
+            return;
+        }
     } else {
         // Handle tilde expansion
         if(dir[0] == '~') {

@@ -3,8 +3,14 @@
 
 void add_custom_history(History *hist, const char *cmd) {
     if(hist->count >= hist->size) {
-        hist->size *= 2;
-        hist->items = realloc(hist->items, hist->size * sizeof(char*));
+        size_t new_size = hist->size * 2;
+        char **new_items = realloc(hist->items, new_size * sizeof(char*));
+        if (!new_items) {
+            _puts("Error: Failed to expand history buffer\n");
+            return;
+        }
+        hist->items = new_items;
+        hist->size = new_size;
     }
     hist->items[hist->count++] = strdup(cmd);
 }
