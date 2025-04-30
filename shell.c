@@ -1,9 +1,11 @@
 #include "shell.h"
+#include <readline/readline.h>
+#include <readline/history.h>
 
 #define GEMINI_URL "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 #define PROMPT_PREFIX "Respond with either:\nCOMMAND: <linux command> - For executable commands\nEXPLAIN: <text> - For explanations\nQuery: "
 
-History hist = {0}; // Global history instance
+History hist = {0};
 
 struct MemoryStruct {
     char *memory;
@@ -106,7 +108,7 @@ char *get_ai_command(const char *input) {
 void handle_ai_command(char *input) {
     char *clean_input = input + (input[0] == '\'' ? 1 : (strstr(input, "ai:") == input ? 3 : 0));
     clean_input[strcspn(clean_input, "\n")] = 0;
-    add_history(&hist, clean_input);
+    add_custom_history(&hist, clean_input);
     
     char *response = get_ai_command(clean_input);
     if(response) {
@@ -176,66 +178,66 @@ int main(void) {
     hist.count = 0;
     
     signal(SIGINT, sig_handler);
-    char *buff = NULL;
-    size_t size = 0;
-    ssize_t len;
+    rl_bind_key('\t', rl_complete);
 
     while(1) {
-        if(isatty(STDIN_FILENO))
-            _puts("\033[0;91m#DYNAMO$\033[0m ");
+        char *input = readline("\033[0;91m#DYNAMO$\033[0m ");
+        if(!input) break;
         
-        len = getline(&buff, &size, stdin);
-        if(len == -1) {
-            free(buff);
-            exit(0);
-        }
-        buff[strcspn(buff, "\n")] = 0;
-
-        // Handle AI commands
-        if(buff[0] == '\'' || strstr(buff, "ai:") == buff) {
-            handle_ai_command(buff);
+        // Add to both histories
+        add_history(input); // Readline history
+        add_custom_history(&hist, input); // Custom history
+        
+        // Handle AI commands first
+        if(input[0] == '\'' || strstr(input, "ai:") == input) {
+            handle_ai_command(input);
+            free(input);
             continue;
         }
 
-        char **arv = splitstring(buff, " \n");
-        if(!arv || !arv[0]) {
-            freearv(arv);
-            continue;
-        }
-
+        char **arv = splitstring(input, " \n");
+        
         // Built-in commands
-        void (*builtin_func)(char **) = checkbuild(arv);
-        if(builtin_func) {
-            builtin_func(arv);
-            freearv(arv);
-            continue;
+        if(arv[0]) {
+            void (*builtin_func)(char **) = checkbuild(arv);
+            if(builtin_func) {
+                builtin_func(arv);
+                freearv(arv);
+                free(input);
+                continue;
+            }
         }
 
         // Handle pipes
-        if(contains_pipes(buff)) {
-            char ***pipeline = parse_pipeline(buff);
+        if(contains_pipes(input)) {
+            char ***pipeline = parse_pipeline(input);
             execute_pipeline(pipeline);
             for(int i=0; pipeline[i]; i++) freearv(pipeline[i]);
             free(pipeline);
             freearv(arv);
+            free(input);
             continue;
         }
 
         // Regular commands
-        list_path *head = linkpath(_getenv("PATH"));
-        char *full_path = _which(arv[0], head);
-        if(full_path) {
-            free(arv[0]);
-            arv[0] = full_path;
-            expand_tilde(arv);
-            execute(arv);
-        } else {
-            _puts(arv[0]);
-            _puts(": command not found\n");
+        if(arv[0]) {
+            list_path *head = linkpath(_getenv("PATH"));
+            char *full_path = _which(arv[0], head);
+            if(full_path) {
+                free(arv[0]);
+                arv[0] = full_path;
+                expand_tilde(arv);
+                execute(arv);
+            } else {
+                _puts(arv[0]);
+                _puts(": command not found\n");
+            }
+            free_list(head);
         }
-        free_list(head);
+        
         freearv(arv);
+        free(input);
     }
-    free(buff);
+    free(hist.items);
     return 0;
 }

@@ -72,7 +72,7 @@ void _unsetenv(char **arv);
 
 char *get_ai_command(const char *input);
 void handle_ai_command(char *input);
-void add_history(History *hist, const char *cmd);
+void add_custom_history(History *hist, const char *cmd);
 void show_history(char **arv);
 void handle_history_replay(History *hist, const char *cmd);
 void show_help(char **arv);

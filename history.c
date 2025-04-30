@@ -1,7 +1,7 @@
 #include "shell.h"
 #include <ctype.h>  // Added for isdigit()
 
-void add_history(History *hist, const char *cmd) {
+void add_custom_history(History *hist, const char *cmd) {
     if(hist->count >= hist->size) {
         hist->size *= 2;
         hist->items = realloc(hist->items, hist->size * sizeof(char*));

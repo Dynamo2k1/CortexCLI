@@ -11,11 +11,16 @@ void exitt(char **arv) {
 
 void cd_builtin(char **args) {
     char *dir = args[1];
+    char expanded_dir[1024] = {0};
+
     if (!dir) {
         dir = getenv("HOME");
-        if (!dir) {
-            _puts("cd: No home directory\n");
-            return;
+    } else {
+        // Handle tilde expansion
+        if(dir[0] == '~') {
+            char *home = getenv("HOME");
+            snprintf(expanded_dir, sizeof(expanded_dir), "%s%s", home, dir+1);
+            dir = expanded_dir;
         }
     }
     
