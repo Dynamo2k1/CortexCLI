@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <curl/curl.h>
 #include <jansson.h>
+#include <fcntl.h>
 
 #define MAX_HISTORY 100
 #define HELP_TEXT \
@@ -77,7 +78,8 @@ void show_history(char **arv);
 void handle_history_replay(History *hist, const char *cmd);
 void show_help(char **arv);
 void cd_builtin(char **args);
-
+void cd_dotdot(char **args);
+//void cd_dotdot(char **arv __attribute__ ((unused)))
 extern char **environ;
 extern History hist;
 

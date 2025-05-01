@@ -1,6 +1,7 @@
 #include "shell.h"
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h> 
 
 int contains_pipes(const char *str) {
     return strchr(str, '|') != NULL;
@@ -8,32 +9,68 @@ int contains_pipes(const char *str) {
 
 char **splitstring(char *str, const char *delim) {
     char **array = NULL;
-    char *token;
     int count = 0;
     char *copy = strdup(str);
-
-    token = strtok(copy, delim);
+    
+    // Use proper delimiters and handle quotes
+    char *token = strtok(copy, " \t\n");
     while(token) {
-        // Trim whitespace
-        while(*token == ' ' || *token == '\t') token++;
-        int len = strlen(token);
-        while(len > 0 && (token[len-1] == ' ' || token[len-1] == '\t')) token[--len] = '\0';
-        
-        if(*token) {  // Skip empty tokens
-            array = realloc(array, sizeof(char*) * (count + 1));
-            array[count++] = strdup(token);
+        // Handle redirect symbol splitting
+        if(strchr(token, '>')) {
+            char *ptr = token;
+            while(*ptr) {
+                if(*ptr == '>') {
+                    // Split before '>'
+                    *ptr = '\0';
+                    if(ptr > token && *token != '\0') {
+                        array = realloc(array, sizeof(char*) * (count + 1));
+                        array[count++] = strdup(token);
+                    }
+                    // Add '>' itself
+                    array = realloc(array, sizeof(char*) * (count + 1));
+                    array[count++] = strdup(">");
+                    token = ptr + 1;
+                    ptr = token;
+                } else {
+                    ptr++;
+                }
+            }
+            if(*token != '\0') {
+                array = realloc(array, sizeof(char*) * (count + 1));
+                array[count++] = strdup(token);
+            }
+        } else {
+            // Normal token handling
+            if(*token != '\0') {
+                array = realloc(array, sizeof(char*) * (count + 1));
+                array[count++] = strdup(token);
+            }
         }
-        token = strtok(NULL, delim);
+        token = strtok(NULL, " \t\n");
     }
     
-    if(array) {
-        array = realloc(array, sizeof(char*) * (count + 1));
-        array[count] = NULL;
-    }
+    // Null-terminate array
+    array = realloc(array, sizeof(char*) * (count + 1));
+    array[count] = NULL;
     
     free(copy);
     return array;
 }
+
+int contains_semicolons(const char *str) {
+    return strchr(str, ';') != NULL;
+}
+
+void execute_sequence(char *input) {
+    char **commands = splitstring(input, ";");
+    for(int i=0; commands[i]; i++) {
+        char **args = splitstring(commands[i], " \t\n");
+        execute(args);
+        freearv(args);
+    }
+    freearv(commands);
+}
+
 void execute(char **argv) {
     if(!argv || !argv[0]) return;
     
@@ -45,6 +82,15 @@ void execute(char **argv) {
         return;
     }
 
+	int out_fd = -1;
+    for(int i=0; argv[i]; i++) {
+        if(strcmp(argv[i], ">") == 0 && argv[i+1]) {
+            out_fd = open(argv[i+1], O_WRONLY|O_CREAT|O_TRUNC, 0644);
+            argv[i] = NULL;
+            break;
+        }
+    }
+
     pid_t pid = fork();
     if(pid == -1) {
         perror("fork");
@@ -52,10 +98,14 @@ void execute(char **argv) {
     }
     
     if(pid == 0) {
+        if(out_fd != -1) {
+            dup2(out_fd, STDOUT_FILENO);
+            close(out_fd);
+        }
         execvp(argv[0], argv);
         perror(argv[0]);
         exit(EXIT_FAILURE);
-    } else {
+    }else {
         wait(NULL);
     }
 }
@@ -120,6 +170,8 @@ char ***parse_pipeline(char *input) {
     freearv(pipes);
     return commands;
 }
+
+
 
 void *_realloc(void *ptr, unsigned int old_size, unsigned int new_size) {
     if(new_size == 0) {

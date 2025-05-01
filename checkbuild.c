@@ -8,7 +8,8 @@ void(*checkbuild(char **arv))(char **) {
         {"unsetenv", _unsetenv},
         {"history", show_history},
         {"help", show_help},
-        {"cd", cd_builtin}, 
+        {"cd", cd_builtin},
+		{"..", cd_dotdot}, 
         {NULL, NULL}
     };
 

@@ -8,6 +8,10 @@ void exitt(char **arv) {
     }
     exit(status);
 }
+void cd_dotdot(char **arv __attribute__ ((unused))) {
+    char *args[] = {"cd", "..", NULL};
+    cd_builtin(args);
+}
 
 void cd_builtin(char **args) {
     char *dir = args[1];

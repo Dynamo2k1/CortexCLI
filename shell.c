@@ -182,6 +182,42 @@ void handle_explanation(const char *text) {
     free(copy);
 }
 
+char* get_hostname() {
+    static char hostname[256];
+    if (gethostname(hostname, sizeof(hostname))) return NULL;
+    // Trim domain if present
+    char *dot = strchr(hostname, '.');
+    if (dot) *dot = '\0';
+    return hostname;
+}
+
+char* generate_prompt() {
+    char *user = getenv("USER");
+    char *host = get_hostname();
+    char *cwd = getenv("PWD");
+    
+    // Fallbacks if any information missing
+    if (!user) user = "unknown";
+    if (!host) host = "localhost";
+    if (!cwd) cwd = "~";
+
+    // Color codes
+    const char *red = "\033[1;31m";
+    const char *cyan = "\033[1;36m";
+    const char *yellow = "\033[1;33m";
+    const char *reset = "\033[0m";
+
+    // Create prompt string
+    char *prompt = malloc(512);
+    snprintf(prompt, 512, "%s%s%s@%s%s:%s%s%s\n➤ %s",
+        red, user, reset,
+        cyan, host, reset,
+        yellow, cwd, reset
+    );
+
+    return prompt;
+}
+
 int main(void) {
     // Initialize history
     hist.items = malloc(sizeof(char*) * MAX_HISTORY);
@@ -192,7 +228,10 @@ int main(void) {
     rl_bind_key('\t', rl_complete);
 
     while(1) {
-        char *input = readline("\033[0;91m#DYNAMO$\033[0m ");
+
+        char *prompt = generate_prompt();
+		char *input = readline(prompt);
+		free(prompt);
         if(!input) break;
         
         // Add to both histories
