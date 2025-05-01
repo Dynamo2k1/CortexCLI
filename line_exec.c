@@ -2,57 +2,65 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h> 
+#include <string.h>
 
 int contains_pipes(const char *str) {
     return strchr(str, '|') != NULL;
+}
+
+static char **add_token(char **array, int *count, char *token) {
+    array = realloc(array, sizeof(char*) * (*count + 2));
+    array[*count] = strdup(token);
+    (*count)++;
+    return array;
 }
 
 char **splitstring(char *str, const char *delim) {
     char **array = NULL;
     int count = 0;
     char *copy = strdup(str);
-    
-    // Use proper delimiters and handle quotes
-    char *token = strtok(copy, " \t\n");
+    char *token = strtok(copy, delim);
+
     while(token) {
-        // Handle redirect symbol splitting
-        if(strchr(token, '>')) {
+        // Handle quoted arguments
+        if(token[0] == '"' || token[0] == '\'') {
+            char quote = token[0];
+            char *end = strchr(token+1, quote);
+            if(end) {
+                *end = '\0';
+                array = add_token(array, &count, token+1);
+                token = end + 1;
+                continue;
+            }
+        }
+
+        // Handle special characters
+        if(strchr(token, '>') || strchr(token, '|')) {
             char *ptr = token;
             while(*ptr) {
-                if(*ptr == '>') {
-                    // Split before '>'
+                if(*ptr == '>' || *ptr == '|') {
+                    char sep[2] = {*ptr, '\0'};
                     *ptr = '\0';
-                    if(ptr > token && *token != '\0') {
-                        array = realloc(array, sizeof(char*) * (count + 1));
-                        array[count++] = strdup(token);
+                    if(ptr > token && *token) {
+                        array = add_token(array, &count, token);
                     }
-                    // Add '>' itself
-                    array = realloc(array, sizeof(char*) * (count + 1));
-                    array[count++] = strdup(">");
+                    array = add_token(array, &count, sep);
                     token = ptr + 1;
                     ptr = token;
                 } else {
                     ptr++;
                 }
             }
-            if(*token != '\0') {
-                array = realloc(array, sizeof(char*) * (count + 1));
-                array[count++] = strdup(token);
-            }
-        } else {
-            // Normal token handling
-            if(*token != '\0') {
-                array = realloc(array, sizeof(char*) * (count + 1));
-                array[count++] = strdup(token);
-            }
         }
-        token = strtok(NULL, " \t\n");
+        
+        if(token && *token) {
+            array = add_token(array, &count, token);
+        }
+        token = strtok(NULL, delim);
     }
-    
-    // Null-terminate array
+
     array = realloc(array, sizeof(char*) * (count + 1));
     array[count] = NULL;
-    
     free(copy);
     return array;
 }
@@ -112,61 +120,65 @@ void execute(char **argv) {
 
 void execute_pipeline(char ***commands) {
     int fds[2];
-    int prev_pipe_in = 0;
-    int i = 0;
+    int prev_pipe = 0;
+    pid_t pid;
+    int i;
 
-    while(commands[i+1]) {
-        pipe(fds);
-        
-        pid_t pid = fork();
-        if(pid == 0) {
-            if(prev_pipe_in != 0) {
-                dup2(prev_pipe_in, STDIN_FILENO);
-                close(prev_pipe_in);
+    for(i = 0; commands[i+1] != NULL; i++) {
+        if(pipe(fds) == -1) {
+            perror("pipe");
+            return;
+        }
+
+        pid = fork();
+        if(pid == -1) {
+            perror("fork");
+            return;
+        }
+
+        if(pid == 0) { // Child process
+            if(prev_pipe != 0) {
+                dup2(prev_pipe, STDIN_FILENO);
+                close(prev_pipe);
             }
             dup2(fds[1], STDOUT_FILENO);
             close(fds[0]);
             close(fds[1]);
-            
+
             execvp(commands[i][0], commands[i]);
             perror(commands[i][0]);
             exit(EXIT_FAILURE);
-        }
-        else {
-            wait(NULL);
+        } else { // Parent process
             close(fds[1]);
-            prev_pipe_in = fds[0];
+            if(prev_pipe != 0) close(prev_pipe);
+            prev_pipe = fds[0];
         }
-        i++;
     }
 
     // Last command
-    pid_t pid = fork();
+    pid = fork();
     if(pid == 0) {
-        if(prev_pipe_in != 0) {
-            dup2(prev_pipe_in, STDIN_FILENO);
-            close(prev_pipe_in);
-        }
+        dup2(prev_pipe, STDIN_FILENO);
+        close(prev_pipe);
         execvp(commands[i][0], commands[i]);
         perror(commands[i][0]);
         exit(EXIT_FAILURE);
-    }
-    else {
-        close(prev_pipe_in);
-        wait(NULL);
+    } else {
+        close(prev_pipe);
+        while(wait(NULL) > 0);
     }
 }
 
 char ***parse_pipeline(char *input) {
-    int num_commands = 1;
     char **pipes = splitstring(input, "|");
-    for(int i=0; pipes[i]; i++) num_commands++;
-    
-    char ***commands = malloc(sizeof(char**) * num_commands);
-    for(int i=0; pipes[i]; i++) {
-        commands[i] = splitstring(pipes[i], " \n\t");
+    int num_commands = 0;
+    while(pipes[num_commands]) num_commands++;
+
+    char ***commands = malloc(sizeof(char**) * (num_commands + 1));
+    for(int i=0; i<num_commands; i++) {
+        commands[i] = splitstring(pipes[i], " \t\n");
     }
-    commands[num_commands-1] = NULL;
+    commands[num_commands] = NULL;
     freearv(pipes);
     return commands;
 }

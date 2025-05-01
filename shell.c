@@ -105,6 +105,35 @@ char *get_ai_command(const char *input) {
     return command;
 }
 
+void expand_variables(char **args) {
+    if(!args) return;
+    for(int i=0; args[i]; i++) {
+        if(args[i][0] == '$') {
+            char *var_name = args[i]+1;
+            char *value = getenv(var_name);
+            if(value) {
+                free(args[i]);
+                args[i] = strdup(value);
+            }
+        }
+    }
+}
+
+void expand_tilde(char **args) {
+    if(!args) return;
+    for(int i=0; args[i]; i++) {
+        if(args[i][0] == '~') {
+            char *home = getenv("HOME");
+            if(!home) home = getenv("PWD");
+            char *new = malloc(strlen(home) + strlen(args[i]));
+            strcpy(new, home);
+            strcat(new, args[i]+1);
+            free(args[i]);
+            args[i] = new;
+        }
+    }
+}
+
 void handle_ai_command(char *input) {
     char *clean_input = input + (input[0] == '\'' ? 1 : (strstr(input, "ai:") == input ? 3 : 0));
     clean_input[strcspn(clean_input, "\n")] = 0;
@@ -112,7 +141,7 @@ void handle_ai_command(char *input) {
     
     char *response = get_ai_command(clean_input);
     if(response) {
-		if(strstr(response, "COMMAND:")) {
+        if(strstr(response, "COMMAND:")) {
             char *cmd = strstr(response, "COMMAND:") + 8;
             cmd[strcspn(cmd, "\n")] = 0;
             
@@ -124,10 +153,10 @@ void handle_ai_command(char *input) {
                 _puts("\n");
                 char **args = splitstring(cmd, " \n");
                 expand_tilde(args);
+                expand_variables(args);
 
-                // Check if the command is a built-in
                 void (*builtin_func)(char **) = checkbuild(args);
-                if (builtin_func) {
+                if(builtin_func) {
                     builtin_func(args);
                 } else {
                     if(contains_pipes(cmd)) {
@@ -155,19 +184,6 @@ void handle_ai_command(char *input) {
     }
 }
 
-void expand_tilde(char **args) {
-    if(!args) return;
-    for(int i=0; args[i]; i++) {
-        if(args[i][0] == '~') {
-            char *home = getenv("HOME");
-            char *new = malloc(strlen(home) + strlen(args[i]));
-            strcpy(new, home);
-            strcat(new, args[i]+1);
-            free(args[i]);
-            args[i] = new;
-        }
-    }
-}
 
 void handle_explanation(const char *text) {
     _puts("\nExplanation:\n");
@@ -207,9 +223,9 @@ char* generate_prompt() {
     const char *yellow = "\033[1;33m";
     const char *reset = "\033[0m";
 
-    // Create prompt string
+    // Create prompt string with proper spacing
     char *prompt = malloc(512);
-    snprintf(prompt, 512, "%s%s%s@%s%s:%s%s%s\n➤ %s",
+    snprintf(prompt, 512, "\n%s%s%s@%s%s:%s%s%s\n➤ %s",
         red, user, reset,
         cyan, host, reset,
         yellow, cwd, reset
@@ -217,6 +233,7 @@ char* generate_prompt() {
 
     return prompt;
 }
+
 
 int main(void) {
     // Initialize history

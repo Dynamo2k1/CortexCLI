@@ -79,7 +79,7 @@ void handle_history_replay(History *hist, const char *cmd);
 void show_help(char **arv);
 void cd_builtin(char **args);
 void cd_dotdot(char **args);
-//void cd_dotdot(char **arv __attribute__ ((unused)))
+void expand_variables(char **args);
 extern char **environ;
 extern History hist;
 
