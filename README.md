@@ -1,7 +1,7 @@
 # CortexCLI - AI-Powered Linux Shell 🚀
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub Stars](https://img.shields.io/github/stars/yourusername/CortexCLI?style=social)](https://github.com/yourusername/CortexCLI)
+[![GitHub Stars](https://img.shields.io/github/stars/dynamo2k1/CortexCLI?style=social)](https://github.com/dynamo2k1/CortexCLI)
 
 A modern Linux shell with integrated AI capabilities powered by Google Gemini, supporting multilingual interactions and advanced command execution.
 
