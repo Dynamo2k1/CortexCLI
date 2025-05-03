@@ -59,7 +59,6 @@ export GEMINI_API_KEY="your-api-key-here"
 
 ## Demo 🎥
 
-![AI Command Demo](demo.gif) *(Add actual demo GIF)*
 
 ## Contributing 🤝
 
