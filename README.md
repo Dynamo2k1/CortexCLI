@@ -59,7 +59,7 @@ export GEMINI_API_KEY="your-api-key-here"
 
 ## Demo 🎥
 
-![AI Command Demo](demo.gif) *(Add actual demo GIF)*
+https://github.com/user-attachments/assets/570492af-3abb-41d7-bcd3-e85caabe0f1d
 
 ## Contributing 🤝
 
@@ -79,5 +79,5 @@ MIT License - See [LICENSE](LICENSE) for details
 
 ---
 
-**Crafted with ❤️ by Dynamo2k1**  
+**Crafted with ❤️ by Dynamo2k1, Prof.Paradox and hurrainjhl**  
 *"Where Human Intuition Meets Machine Intelligence"*
