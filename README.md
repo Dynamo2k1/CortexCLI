@@ -59,6 +59,7 @@ export GEMINI_API_KEY="your-api-key-here"
 
 ## Demo 🎥
 
+https://github.com/user-attachments/assets/570492af-3abb-41d7-bcd3-e85caabe0f1d
 
 ## Contributing 🤝
 
