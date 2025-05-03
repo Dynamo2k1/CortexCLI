@@ -79,5 +79,5 @@ MIT License - See [LICENSE](LICENSE) for details
 
 ---
 
-**Crafted with ❤️ by Dynamo2k1**  
+**Crafted with ❤️ by Dynamo2k1, Prof.Paradox, hurrainjhl**  
 *"Where Human Intuition Meets Machine Intelligence"*
