@@ -77,7 +77,13 @@ MIT License - See [LICENSE](LICENSE) for details
 - Readline Library
 - Jansson JSON Parser
 
----
 
-**Crafted with ❤️ by Dynamo2k1, Prof.Paradox and hurrainjhl**  
+
+## **Crafted with ❤️ by:**
+
+* [Dynamo2k1](https://github.com/Dynamo2k1)
+* [Prof.Paradox](https://github.com/ProfParadox)
+* [hurrainjhl](https://github.com/hurrainjhl)
+* [ZUNATIC](https://github.com/ZUNATIC)
+
 *"Where Human Intuition Meets Machine Intelligence"*
