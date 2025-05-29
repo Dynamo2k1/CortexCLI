@@ -1,5 +1,81 @@
 #include "shell.h"
 
+// Directory stack
+char *dir_stack[MAX_DIR_STACK];
+int dir_stack_ptr = -1;
+
+// Pushd builtin
+void pushd_builtin(char **args) {
+    if (!args[1]) {
+        _puts("pushd: missing argument\n");
+        return;
+    }
+
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        if (dir_stack_ptr < MAX_DIR_STACK - 1) {
+            dir_stack[++dir_stack_ptr] = strdup(cwd);
+        } else {
+            _puts("Directory stack full\n");
+            return;
+        }
+    } else {
+        perror("getcwd");
+        return;
+    }
+
+    cd_builtin(args);
+}
+
+// Popd builtin
+void popd_builtin(char **args __attribute__ ((unused))) {
+    if (dir_stack_ptr < 0) {
+        _puts("popd: directory stack empty\n");
+        return;
+    }
+
+    char *dir = dir_stack[dir_stack_ptr--];
+    char *cd_args[] = {"cd", dir, NULL};
+    cd_builtin(cd_args);
+    free(dir);
+}
+
+// Dirs builtin
+void dirs_builtin(char **args __attribute__ ((unused))) {
+    for (int i = dir_stack_ptr; i >= 0; i--) {
+        _puts(dir_stack[i]);
+        _puts("\n");
+    }
+    
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd))) {
+        _puts(cwd);
+        _puts("\n");
+    }
+}
+
+// Cd minus
+void cd_minus(char **args __attribute__ ((unused))) {
+    if (dir_stack_ptr < 0) {
+        _puts("cd-: no previous directory\n");
+        return;
+    }
+
+    char cwd[1024];
+    if (!getcwd(cwd, sizeof(cwd))) {
+        perror("getcwd");
+        return;
+    }
+
+    char *dir = dir_stack[dir_stack_ptr];
+    dir_stack[dir_stack_ptr] = strdup(cwd);
+    
+    char *cd_args[] = {"cd", dir, NULL};
+    cd_builtin(cd_args);
+    free(dir);
+}
+
+// Exit the shell
 void exitt(char **arv) {
     int status = 0;
     if(arv[1]) {
@@ -15,12 +91,19 @@ void cd_dotdot(char **arv __attribute__ ((unused))) {
 
 void cd_builtin(char **args) {
     char *dir = args[1];
-    char expanded_dir[1024] = {0};
+    char expanded_dir[PATH_MAX] = {0};
 
-    if (!dir) {
-        dir = getenv("HOME");
-		if (!dir) {
-            _puts("cd: No home directory found\n");
+    if (!dir || strcmp(dir, "-") == 0) {
+        if (dir_stack_ptr >= 0) {
+            dir = dir_stack[dir_stack_ptr];
+        } else if (!dir) {
+            dir = getenv("HOME");
+            if (!dir) {
+                _puts("cd: No home directory found\n");
+                return;
+            }
+        } else {
+            _puts("cd-: no previous directory\n");
             return;
         }
     } else {
@@ -32,15 +115,26 @@ void cd_builtin(char **args) {
         }
     }
     
-    if (chdir(dir) != 0) {
-        perror("cd");
-    } else {
-        char cwd[1024];
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
-            setenv("PWD", cwd, 1);
+    char old_cwd[PATH_MAX];
+    if (getcwd(old_cwd, sizeof(old_cwd))) {
+        if (chdir(dir) != 0) {
+            perror("cd");
         } else {
-            perror("getcwd");
+            char new_cwd[PATH_MAX];
+            if (getcwd(new_cwd, sizeof(new_cwd))) {
+                setenv("PWD", new_cwd, 1);
+                // Push to stack if this wasn't a cd - command
+                if (args[1] && strcmp(args[1], "-") != 0) {
+                    if (dir_stack_ptr < MAX_DIR_STACK - 1) {
+                        dir_stack[++dir_stack_ptr] = strdup(old_cwd);
+                    }
+                }
+            } else {
+                perror("getcwd");
+            }
         }
+    } else {
+        perror("getcwd");
     }
 }
 

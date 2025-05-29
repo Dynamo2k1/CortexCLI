@@ -82,7 +82,7 @@ void execute_sequence(char *input) {
 void execute(char **argv) {
     if(!argv || !argv[0]) return;
     
-	if(contains_pipes(argv[0])) {
+    if(contains_pipes(argv[0])) {
         char ***pipeline = parse_pipeline(argv[0]);
         execute_pipeline(pipeline);
         for(int i=0; pipeline[i]; i++) freearv(pipeline[i]);
@@ -90,7 +90,7 @@ void execute(char **argv) {
         return;
     }
 
-	int out_fd = -1;
+    int out_fd = -1;
     for(int i=0; argv[i]; i++) {
         if(strcmp(argv[i], ">") == 0 && argv[i+1]) {
             out_fd = open(argv[i+1], O_WRONLY|O_CREAT|O_TRUNC, 0644);
@@ -101,7 +101,9 @@ void execute(char **argv) {
 
     pid_t pid = fork();
     if(pid == -1) {
+        _puts(COLOR_RED);
         perror("fork");
+        _puts(COLOR_RESET);
         return;
     }
     
@@ -111,10 +113,24 @@ void execute(char **argv) {
             close(out_fd);
         }
         execvp(argv[0], argv);
+        _puts(COLOR_RED);
         perror(argv[0]);
+        _puts(COLOR_RESET);
         exit(EXIT_FAILURE);
-    }else {
-        wait(NULL);
+    } else {
+        int status;
+        waitpid(pid, &status, 0);
+        
+        // Print exit status if non-zero
+        if(WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+            _puts(COLOR_YELLOW);
+            _puts("Command exited with status ");
+            char buf[20];
+            snprintf(buf, sizeof(buf), "%d", WEXITSTATUS(status));
+            _puts(buf);
+            _puts("\n");
+            _puts(COLOR_RESET);
+        }
     }
 }
 
