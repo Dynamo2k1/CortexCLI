@@ -234,8 +234,15 @@ char* generate_prompt() {
     return prompt;
 }
 
+void display_logo() {
+    system("printf \"\\033[1;36m\" && figlet -d ~/.figlet/fonts -f 3d \"CortexCLI\"");
+    system("printf \"\\033[0;35m\" && figlet -f small \"by LAZYINS\"");
+    printf("\033[0m\n");
+    printf("     Security-focused Command Line Interface\n\n");
+}
 
 int main(void) {
+    display_logo();
     // Initialize history
     hist.items = malloc(sizeof(char*) * MAX_HISTORY);
     hist.size = MAX_HISTORY;
