@@ -30,7 +30,7 @@ sudo dnf install gcc libcurl-devel jansson-devel readline-devel
 
 ### Compilation
 ```bash
-git clone https://github.com/yourusername/CortexCLI.git
+git clone https://github.com/Dynamo2k1/CortexCLI.git
 cd CortexCLI
 make  # Or manually compile with:
 # gcc -o dynamo *.c -lcurl -ljansson -lreadline
