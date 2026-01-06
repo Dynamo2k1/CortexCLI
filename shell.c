@@ -1,8 +1,12 @@
 #include "shell.h"
+#include "ai_backend.h"
+#include "lang_detect.h"
+#include "safety.h"
+#include "audit.h"
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <ctype.h>
 
-#define GEMINI_URL "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 #define PROMPT_PREFIX "You are CortexCLI, a security-focused Linux assistant. Follow these rules:\n" \
 "1. Respond with MULTIPLE lines if needed, each starting with one of: COMMAND:, EXPLAIN:, SCAN:, VULN:, or CTF:\n" \
 "2. For complex responses:\n" \
@@ -14,6 +18,7 @@
 "3. ALWAYS prefix each logical unit with the appropriate prefix\n" \
 "4. Provide both commands and explanations when appropriate\n" \
 "5. Never include text before prefixes\n" \
+"6. Support multilingual input (Urdu, Arabic, Hindi, etc.) - detect language and respond appropriately\n" \
 "Current session context:\n"
 
 History hist = {0};
@@ -27,13 +32,13 @@ struct MemoryStruct
 };
 
 void add_to_session_memory(const char *user_input, const char *ai_response) {
-    // Create a cleaned version of the response (single line)
+    /* Create a cleaned version of the response (single line) */
     char *cleaned_response = strdup(ai_response);
     for (char *p = cleaned_response; *p; p++) {
-        if (*p == '\n') *p = '|';  // Replace newlines with pipes
+        if (*p == '\n') *p = '|';  /* Replace newlines with pipes */
     }
     
-    // Store new exchange
+    /* Store new exchange */
     session_memory[session_memory_count % MAX_SESSION_MEMORY].user_input = strdup(user_input);
     session_memory[session_memory_count % MAX_SESSION_MEMORY].ai_response = cleaned_response;
     session_memory_count++;
@@ -44,124 +49,58 @@ void sig_handler(int sig_num)
 {
     if (sig_num == SIGINT)
     {
-        _puts("\n\033[0;91m#DYNAMO$\033[0m ");
+        _puts("\n\033[0;91m#CortexCLI$\033[0m ");
     }
 }
 
-/* CURL write callback */
-static size_t WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
-{
-    size_t realsize = size * nmemb;
-    struct MemoryStruct *mem = (struct MemoryStruct *)userp;
-
-    char *ptr = realloc(mem->memory, mem->size + realsize + 1);
-    if (!ptr)
-        return 0;
-
-    mem->memory = ptr;
-    memcpy(&(mem->memory[mem->size]), contents, realsize);
-    mem->size += realsize;
-    mem->memory[mem->size] = 0;
-    return realsize;
-}
-
-/* Get AI command from Gemini */
+/* Get AI command using the multi-backend system */
 char *get_ai_command(const char *input)
 {
-    CURL *curl;
-    CURLcode res;
-    struct MemoryStruct chunk = {0};
-    char *api_key = getenv("GEMINI_API_KEY");
-    char *command = NULL;
-
-    if (!api_key)
-    {
-        _puts("Error: GEMINI_API_KEY not set\n");
-        return NULL;
-    }
-
-    // Build context-enhanced query
-    char context_query[4096] = {0};
-    strcpy(context_query, PROMPT_PREFIX);
+    /* Build context-enhanced query */
+    char context_query[8192] = {0};
+    strncpy(context_query, PROMPT_PREFIX, sizeof(context_query) - 1);
     
-    // Add session memory
+    /* Add session memory */
     for (int i = 0; i < MAX_SESSION_MEMORY; i++) {
         int idx = (session_memory_count - i - 1) % MAX_SESSION_MEMORY;
         if (idx < 0) idx += MAX_SESSION_MEMORY;
         
         if (session_memory[idx].user_input && session_memory[idx].ai_response) {
-            strcat(context_query, "User: ");
-            strcat(context_query, session_memory[idx].user_input);
-            strcat(context_query, "\nAI: ");
-            strcat(context_query, session_memory[idx].ai_response);
-            strcat(context_query, "\n");
+            size_t remaining = sizeof(context_query) - strlen(context_query) - 1;
+            if (remaining > 100) {
+                strncat(context_query, "User: ", remaining);
+                strncat(context_query, session_memory[idx].user_input, remaining - 50);
+                strncat(context_query, "\nAI: ", remaining - 50);
+                strncat(context_query, session_memory[idx].ai_response, remaining - 100);
+                strncat(context_query, "\n", remaining - 100);
+            }
         }
     }
     
-    strcat(context_query, "Current query: ");
-    strcat(context_query, input);
-
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-    curl = curl_easy_init();
-
-    if (curl)
-    {
-        char url[256];
-        snprintf(url, sizeof(url), "%s?key=%s", GEMINI_URL, api_key);
-
-        json_t *root = json_object();
-        json_t *contents = json_array();
-        json_t *content = json_object();
-        json_t *parts = json_array();
-
-        // Use context_query instead of input
-        json_array_append_new(parts, json_pack("{s:s}", "text", context_query));
-        json_object_set_new(content, "parts", parts);
-        json_array_append_new(contents, content);
-        json_object_set_new(root, "contents", contents);
-
-        char *payload = json_dumps(root, JSON_COMPACT);
-
-        struct curl_slist *headers = NULL;
-        headers = curl_slist_append(headers, "Content-Type: application/json");
-
-        curl_easy_setopt(curl, CURLOPT_URL, url);
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
-
-        res = curl_easy_perform(curl);
-
-        if (res == CURLE_OK && chunk.memory)
-        {
-            json_error_t error;
-            json_t *root = json_loads(chunk.memory, 0, &error);
-            if (root)
-            {
-                json_t *candidates = json_object_get(root, "candidates");
-                if (candidates && json_array_size(candidates) > 0)
-                {
-                    json_t *content = json_object_get(json_array_get(candidates, 0), "content");
-                    json_t *parts = json_object_get(content, "parts");
-                    if (json_array_size(parts) > 0)
-                    {
-                        json_t *text = json_object_get(json_array_get(parts, 0), "text");
-                        command = strdup(json_string_value(text));
-                    }
-                }
-                json_decref(root);
-            }
-        }
-
-        curl_easy_cleanup(curl);
-        curl_slist_free_all(headers);
-        free(payload);
-        free(chunk.memory);
+    /* Log the AI query */
+    audit_log(AUDIT_AI_QUERY, input);
+    
+    /* Query AI with the new backend system */
+    AIResponse *response = ai_query(input, context_query);
+    
+    if (response && response->success && response->content) {
+        audit_log(AUDIT_AI_RESPONSE, response->content);
+        char *result = strdup(response->content);
+        ai_response_free(response);
+        return result;
     }
-
-    curl_global_cleanup();
-    return command;
+    
+    if (response && response->error_message) {
+        audit_log(AUDIT_ERROR, response->error_message);
+        _puts(COLOR_RED);
+        _puts("AI Error: ");
+        _puts(response->error_message);
+        _puts("\n");
+        _puts(COLOR_RESET);
+    }
+    
+    ai_response_free(response);
+    return NULL;
 }   
 
 void expand_variables(char **args)
@@ -204,13 +143,49 @@ void expand_tilde(char **args)
 }
 
 void execute_single_command(char *cmd) {
-    // Security check
-    if (strstr(cmd, "rm -rf") || strstr(cmd, "sudo") || strstr(cmd, "chmod 777")) {
+    /* Use the safety module for risk analysis */
+    RiskAnalysis *analysis = analyze_risk(cmd);
+    
+    if (analysis->blocked) {
         _puts(COLOR_RED);
-        _puts("Security: Command blocked\n");
+        _puts("⛔ Security: Command BLOCKED\n");
+        _puts("Reason: ");
+        _puts(analysis->reason);
+        _puts("\n");
         _puts(COLOR_RESET);
+        audit_log(AUDIT_COMMAND_BLOCKED, cmd);
+        risk_analysis_free(analysis);
         return;
     }
+    
+    /* Check if in sandbox mode */
+    if (safety_get_sandbox_mode()) {
+        char *preview = safety_preview_command(cmd);
+        _puts(COLOR_YELLOW);
+        _puts(preview);
+        _puts(COLOR_RESET);
+        free(preview);
+        risk_analysis_free(analysis);
+        return;
+    }
+    
+    /* Request confirmation for risky commands */
+    if (analysis->requires_confirmation) {
+        if (!safety_confirm(cmd, analysis)) {
+            _puts(COLOR_YELLOW);
+            _puts("Command cancelled by user.\n");
+            _puts(COLOR_RESET);
+            audit_log(AUDIT_USER_CONFIRM, "denied");
+            risk_analysis_free(analysis);
+            return;
+        }
+        audit_log(AUDIT_USER_CONFIRM, "approved");
+    }
+    
+    risk_analysis_free(analysis);
+    
+    /* Log command execution */
+    audit_log(AUDIT_COMMAND_EXEC, cmd);
     
     char **args = splitstring(cmd, " \n");
     expand_tilde(args);
@@ -408,12 +383,12 @@ void analyze_scan_results(const char *scan_output) {
                 _puts(line);
                 _puts("\n");
                 
-                // Check for version info
+                /* Check for version info */
                 if (strstr(line, "version")) {
-                    char service[256];
-                    char version[256];
-                    // Extract service and version (simplified)
-                    if (sscanf(line, "%*d/tcp open %255s %255s", service, version) == 2) {
+                    char service[128];  /* %127s + null terminator */
+                    char version[128];  /* %127s + null terminator */
+                    /* Extract service and version (simplified) */
+                    if (sscanf(line, "%*d/tcp open %127s %127s", service, version) == 2) {
                         char query[512];
                         snprintf(query, sizeof(query), "VULN: %s %s", service, version);
                         handle_ai_command(query);
@@ -482,8 +457,24 @@ void ctf_assistance(const char *challenge_info) {
 
 int main(void)
 {
+    /* Initialize all modules */
+    ai_backend_init();
+    lang_detect_init();
+    safety_init();
+    audit_init();
+    
     display_logo();
-    // Initialize history
+    
+    /* Show current backend */
+    _puts(COLOR_CYAN);
+    _puts("AI Backend: ");
+    _puts(ai_get_backend_name(ai_get_active_backend()));
+    _puts(" (");
+    _puts(ai_get_model());
+    _puts(")\n");
+    _puts(COLOR_RESET);
+    
+    /* Initialize history */
     hist.items = malloc(sizeof(char *) * MAX_HISTORY);
     hist.size = MAX_HISTORY;
     hist.count = 0;
@@ -499,13 +490,19 @@ int main(void)
         free(prompt);
         if (!input)
             break;
+        
+        /* Skip empty input */
+        if (strlen(input) == 0) {
+            free(input);
+            continue;
+        }
 
-        // Add to both histories
-        add_history(input);               // Readline history
-        add_custom_history(&hist, input); // Custom history
+        /* Add to both histories */
+        add_history(input);               /* Readline history */
+        add_custom_history(&hist, input); /* Custom history */
 
-        // Handle AI commands first
-        if (input[0] == '\'' || strstr(input, "ai:") == input)
+        /* Handle explicit AI commands first */
+        if (input[0] == '\'' || strncmp(input, "ai:", 3) == 0)
         {
             handle_ai_command(input);
             free(input);
@@ -514,7 +511,7 @@ int main(void)
 
         char **arv = splitstring(input, " \n");
 
-        // Built-in commands
+        /* Built-in commands */
         if (arv[0])
         {
             void (*builtin_func)(char **) = checkbuild(arv);
@@ -527,7 +524,32 @@ int main(void)
             }
         }
 
-        // Handle pipes
+        /* Use automatic language detection */
+        InputClassification *classification = classify_input(input);
+        
+        if (classification->is_natural_language) {
+            /* Detected as natural language - route to AI */
+            _puts(COLOR_CYAN);
+            _puts("🤖 Detected: ");
+            _puts(lang_get_name(classification->language));
+            _puts(" (confidence: ");
+            char conf_str[16];
+            snprintf(conf_str, sizeof(conf_str), "%.0f%%", 
+                     classification->confidence * 100);
+            _puts(conf_str);
+            _puts(")\n");
+            _puts(COLOR_RESET);
+            
+            handle_ai_command(input);
+            classification_free(classification);
+            freearv(arv);
+            free(input);
+            continue;
+        }
+        
+        classification_free(classification);
+
+        /* Handle pipes */
         if (contains_pipes(input))
         {
             char ***pipeline = parse_pipeline(input);
@@ -540,7 +562,7 @@ int main(void)
             continue;
         }
 
-        // Regular commands
+        /* Regular commands */
         if (arv[0])
         {
             list_path *head = linkpath(_getenv("PATH"));
@@ -552,7 +574,7 @@ int main(void)
                 arv[0] = full_path;
                 expand_tilde(arv);
 
-                // Print command in green before execution
+                /* Print command in green before execution */
                 _puts(COLOR_GREEN);
                 _puts("Executing: ");
                 for (int i = 0; arv[i]; i++)
@@ -567,11 +589,14 @@ int main(void)
             }
             else
             {
-                // Print error in red
-                _puts(COLOR_RED);
+                /* Command not found - try AI */
+                _puts(COLOR_YELLOW);
+                _puts("Command '");
                 _puts(arv[0]);
-                _puts(": command not found\n");
+                _puts("' not found. Trying AI...\n");
                 _puts(COLOR_RESET);
+                
+                handle_ai_command(input);
             }
             free_list(head);
         }
@@ -579,6 +604,154 @@ int main(void)
         freearv(arv);
         free(input);
     }
+    
+    /* Cleanup */
     free(hist.items);
+    ai_backend_cleanup();
+    lang_detect_cleanup();
+    safety_cleanup();
+    audit_cleanup();
+    
     return 0;
+}
+
+/* AI builtin command - manage AI backends */
+void ai_builtin(char **args) {
+    if (!args[1]) {
+        /* Show current backend info */
+        _puts("\nCurrent AI Backend: ");
+        _puts(COLOR_GREEN);
+        _puts(ai_get_backend_name(ai_get_active_backend()));
+        _puts(COLOR_RESET);
+        _puts("\nModel: ");
+        _puts(ai_get_model());
+        _puts("\n\nType 'ai backend' to list all backends\n");
+        _puts("Type 'ai use <name>' to switch backend\n");
+        _puts("Type 'ai model <name>' to change model\n");
+        return;
+    }
+    
+    if (strcmp(args[1], "backend") == 0 || strcmp(args[1], "backends") == 0) {
+        ai_list_backends();
+        return;
+    }
+    
+    if (strcmp(args[1], "use") == 0) {
+        if (!args[2]) {
+            _puts("Usage: ai use <backend_name>\n");
+            _puts("Available: gemini, openai, claude, deepseek, ollama\n");
+            return;
+        }
+        if (ai_set_backend_by_name(args[2]) == 0) {
+            _puts(COLOR_GREEN);
+            _puts("Switched to backend: ");
+            _puts(args[2]);
+            _puts("\n");
+            _puts(COLOR_RESET);
+            audit_log(AUDIT_BACKEND_SWITCH, args[2]);
+        } else {
+            _puts(COLOR_RED);
+            _puts("Failed to switch backend. Is ");
+            _puts(args[2]);
+            _puts(" configured?\n");
+            _puts(COLOR_RESET);
+        }
+        return;
+    }
+    
+    if (strcmp(args[1], "model") == 0) {
+        if (!args[2]) {
+            _puts("Current model: ");
+            _puts(ai_get_model());
+            _puts("\n");
+            return;
+        }
+        ai_set_model(args[2]);
+        _puts(COLOR_GREEN);
+        _puts("Model set to: ");
+        _puts(args[2]);
+        _puts("\n");
+        _puts(COLOR_RESET);
+        return;
+    }
+    
+    _puts("Unknown ai subcommand. Try: backend, use, model\n");
+}
+
+/* Sandbox builtin command */
+void sandbox_builtin(char **args) {
+    if (!args[1]) {
+        _puts("Sandbox mode: ");
+        if (safety_get_sandbox_mode()) {
+            _puts(COLOR_GREEN);
+            _puts("ON");
+        } else {
+            _puts(COLOR_YELLOW);
+            _puts("OFF");
+        }
+        _puts(COLOR_RESET);
+        _puts("\nUsage: sandbox on|off\n");
+        return;
+    }
+    
+    if (strcmp(args[1], "on") == 0) {
+        safety_set_sandbox_mode(1);
+        _puts(COLOR_GREEN);
+        _puts("Sandbox mode enabled. Commands will be previewed but not executed.\n");
+        _puts(COLOR_RESET);
+        return;
+    }
+    
+    if (strcmp(args[1], "off") == 0) {
+        safety_set_sandbox_mode(0);
+        _puts(COLOR_YELLOW);
+        _puts("Sandbox mode disabled. Commands will be executed normally.\n");
+        _puts(COLOR_RESET);
+        return;
+    }
+    
+    _puts("Usage: sandbox on|off\n");
+}
+
+/* Audit builtin command */
+void audit_builtin(char **args) {
+    if (!args[1]) {
+        audit_show_recent(20);
+        return;
+    }
+    
+    if (strcmp(args[1], "clear") == 0) {
+        audit_clear();
+        return;
+    }
+    
+    if (strcmp(args[1], "all") == 0) {
+        audit_show_all();
+        return;
+    }
+    
+    if (strcmp(args[1], "on") == 0) {
+        audit_set_enabled(1);
+        _puts(COLOR_GREEN);
+        _puts("Audit logging enabled.\n");
+        _puts(COLOR_RESET);
+        return;
+    }
+    
+    if (strcmp(args[1], "off") == 0) {
+        audit_set_enabled(0);
+        _puts(COLOR_YELLOW);
+        _puts("Audit logging disabled.\n");
+        _puts(COLOR_RESET);
+        return;
+    }
+    
+    if (strcmp(args[1], "path") == 0) {
+        _puts("Audit log path: ");
+        _puts(audit_get_log_path());
+        _puts("\n");
+        return;
+    }
+    
+    _puts("Usage: audit [clear|all|on|off|path]\n");
 }

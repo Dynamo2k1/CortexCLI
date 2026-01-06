@@ -14,6 +14,9 @@ void(*checkbuild(char **arv))(char **) {
         {"popd", popd_builtin},
         {"dirs", dirs_builtin},
         {"-", cd_minus},
+        {"ai", ai_builtin},
+        {"sandbox", sandbox_builtin},
+        {"audit", audit_builtin},
         {NULL, NULL}
     };
 

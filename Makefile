@@ -3,7 +3,8 @@ CFLAGS = -Wall -Werror -Wextra -pedantic
 LIBS = -lcurl -ljansson -lreadline
 NAME = dynamo
 
-SRC = buildin.c checkbuild.c history.c line_exec.c linkpath.c shell.c string.c
+SRC = buildin.c checkbuild.c history.c line_exec.c linkpath.c shell.c string.c \
+      ai_backend.c lang_detect.c safety.c audit.c
 OBJ = $(SRC:.c=.o)
 
 all: $(NAME)
@@ -14,6 +15,10 @@ $(NAME): $(OBJ)
 %.o: %.c shell.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
+# Quick build without intermediate .o files
+quick:
+	$(CC) $(CFLAGS) -o $(NAME) $(SRC) $(LIBS)
+
 clean:
 	rm -f $(OBJ)
 
@@ -22,4 +27,4 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re
+.PHONY: all clean fclean re quick

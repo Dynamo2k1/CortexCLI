@@ -14,6 +14,7 @@
 #include <curl/curl.h>
 #include <jansson.h>
 #include <fcntl.h>
+#include <linux/limits.h>
 
 #define COLOR_RESET   "\033[0m"
 #define COLOR_RED     "\033[1;31m"
@@ -27,13 +28,42 @@
 #define MAX_HISTORY 100
 #define MAX_SESSION_MEMORY 5 
 #define HELP_TEXT \
-"DYNAMO SHELL HELP:\n"\
-"  'command'      - Execute AI command\n"\
-"  ai:command    - Execute AI command\n"\
-"  history       - Show command history\n"\
-"  help          - Show this help\n"\
-"  !<num>        - Repeat command from history\n"\
-"  !!            - Repeat last command\n"\
+"CortexCLI - AI-Powered Shell Assistant\n\n"\
+"BASIC USAGE:\n"\
+"  'query'         - AI query (natural language)\n"\
+"  ai:query       - AI query (explicit)\n"\
+"  [any command]  - Auto-detects if natural language\n"\
+"\n"\
+"AI COMMANDS:\n"\
+"  ai backend     - List available AI backends\n"\
+"  ai use <name>  - Switch AI backend (gemini/openai/claude/deepseek/ollama)\n"\
+"  ai model <name> - Set model for current backend\n"\
+"\n"\
+"SAFETY:\n"\
+"  sandbox on/off - Enable/disable sandbox mode\n"\
+"  audit          - Show recent audit log\n"\
+"  audit clear    - Clear audit log\n"\
+"\n"\
+"BUILTIN COMMANDS:\n"\
+"  history        - Show command history\n"\
+"  help           - Show this help\n"\
+"  !<num>         - Repeat command from history\n"\
+"  !!             - Repeat last command\n"\
+"  cd, pushd, popd, dirs - Directory navigation\n"\
+"\n"\
+"EXAMPLES:\n"\
+"  'create a React project with TypeScript'\n"\
+"  'اردو میں Python اسکرپٹ بناؤ'\n"\
+"  'show files larger than 10MB'\n"\
+"\n"\
+"ENVIRONMENT:\n"\
+"  GEMINI_API_KEY     - Google Gemini API key\n"\
+"  OPENAI_API_KEY     - OpenAI API key\n"\
+"  ANTHROPIC_API_KEY  - Anthropic Claude API key\n"\
+"  DEEPSEEK_API_KEY   - DeepSeek API key\n"\
+"  OLLAMA_HOST        - Ollama server URL\n"\
+"  CORTEX_SANDBOX     - Enable sandbox mode (1)\n"\
+"  CORTEX_LANG        - Preferred language\n"
 
 typedef struct list_path {
     char *dir;
@@ -102,6 +132,12 @@ void show_help(char **arv);
 void cd_builtin(char **args);
 void cd_dotdot(char **args);
 void expand_variables(char **args);
+
+/* New builtin commands */
+void ai_builtin(char **args);
+void sandbox_builtin(char **args);
+void audit_builtin(char **args);
+
 extern char **environ;
 extern History hist;
 extern char *dir_stack[MAX_DIR_STACK];
