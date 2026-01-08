@@ -13,6 +13,24 @@ typedef enum {
     AI_BACKEND_COUNT
 } AIBackendType;
 
+/* Task Types for model selection */
+typedef enum {
+    TASK_GENERAL = 0,        /* General reasoning/chat */
+    TASK_CODE_GENERATION,    /* Code generation */
+    TASK_SHELL_COMMAND,      /* Shell command generation */
+    TASK_AUTOMATION,         /* Scripts/automation */
+    TASK_EXPLANATION         /* Explanations requested */
+} TaskType;
+
+/* Model capability flags */
+typedef enum {
+    MODEL_CAP_GENERAL = 1,
+    MODEL_CAP_CODE = 2,
+    MODEL_CAP_SHELL = 4,
+    MODEL_CAP_REASONING = 8,
+    MODEL_CAP_FAST = 16
+} ModelCapability;
+
 /* Backend Configuration */
 typedef struct {
     AIBackendType type;
@@ -22,6 +40,20 @@ typedef struct {
     const char *api_url;
     int enabled;
 } AIBackendConfig;
+
+/* Ollama Model Info */
+typedef struct {
+    char *name;
+    char *modified_at;
+    long size;
+    int capabilities;   /* Bitmask of ModelCapability */
+} OllamaModel;
+
+/* Ollama Model List */
+typedef struct {
+    OllamaModel *models;
+    int count;
+} OllamaModelList;
 
 /* AI Response */
 typedef struct {
@@ -53,5 +85,23 @@ void ai_list_backends(void);
 /* Get/Set model for current backend */
 const char *ai_get_model(void);
 void ai_set_model(const char *model);
+
+/* Task type detection */
+TaskType ai_detect_task_type(const char *input);
+const char *ai_get_task_type_name(TaskType type);
+
+/* Ollama model detection */
+OllamaModelList *ai_ollama_list_models(void);
+void ai_ollama_model_list_free(OllamaModelList *list);
+const char *ai_ollama_select_best_model(TaskType task);
+int ai_ollama_check_available(void);
+void ai_list_ollama_models(void);
+
+/* Intelligent model selection */
+void ai_auto_select_model(TaskType task);
+const char *ai_get_recommended_model(AIBackendType backend, TaskType task);
+
+/* Get model-specific system prompt */
+const char *ai_get_optimized_prompt(TaskType task);
 
 #endif /* AI_BACKEND_H */

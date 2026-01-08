@@ -38,6 +38,12 @@
 "  ai backend     - List available AI backends\n"\
 "  ai use <name>  - Switch AI backend (gemini/openai/claude/deepseek/ollama)\n"\
 "  ai model <name> - Set model for current backend\n"\
+"  ai models      - List installed Ollama models\n"\
+"  ai detect      - Show model detection status\n"\
+"\n"\
+"TASK DETECTION:\n"\
+"  Auto-detects task type (code/shell/automation) and selects optimal model\n"\
+"  Use 'explain:' prefix for explanations\n"\
 "\n"\
 "SAFETY:\n"\
 "  sandbox on/off - Enable/disable sandbox mode\n"\
@@ -53,15 +59,15 @@
 "\n"\
 "EXAMPLES:\n"\
 "  'create a React project with TypeScript'\n"\
-"  'اردو میں Python اسکرپٹ بناؤ'\n"\
-"  'show files larger than 10MB'\n"\
+"  'write a Python script to parse JSON'\n"\
+"  'list files larger than 10MB'\n"\
 "\n"\
 "ENVIRONMENT:\n"\
 "  GEMINI_API_KEY     - Google Gemini API key\n"\
 "  OPENAI_API_KEY     - OpenAI API key\n"\
 "  ANTHROPIC_API_KEY  - Anthropic Claude API key\n"\
 "  DEEPSEEK_API_KEY   - DeepSeek API key\n"\
-"  OLLAMA_HOST        - Ollama server URL\n"\
+"  OLLAMA_HOST        - Ollama server URL (default: localhost:11434)\n"\
 "  CORTEX_SANDBOX     - Enable sandbox mode (1)\n"\
 "  CORTEX_LANG        - Preferred language\n"
 

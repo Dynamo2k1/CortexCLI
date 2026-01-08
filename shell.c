@@ -56,9 +56,18 @@ void sig_handler(int sig_num)
 /* Get AI command using the multi-backend system */
 char *get_ai_command(const char *input)
 {
-    /* Build context-enhanced query */
+    /* Detect task type for intelligent model selection */
+    TaskType task = ai_detect_task_type(input);
+    
+    /* Auto-select the best model for this task type */
+    ai_auto_select_model(task);
+    
+    /* Build context-enhanced query with task-optimized prompt */
     char context_query[8192] = {0};
-    strncpy(context_query, PROMPT_PREFIX, sizeof(context_query) - 1);
+    const char *optimized_prompt = ai_get_optimized_prompt(task);
+    strncpy(context_query, optimized_prompt, sizeof(context_query) - 1);
+    strncat(context_query, "\n\n", sizeof(context_query) - strlen(context_query) - 1);
+    strncat(context_query, PROMPT_PREFIX, sizeof(context_query) - strlen(context_query) - 1);
     
     /* Add session memory */
     for (int i = 0; i < MAX_SESSION_MEMORY; i++) {
@@ -77,8 +86,10 @@ char *get_ai_command(const char *input)
         }
     }
     
-    /* Log the AI query */
-    audit_log(AUDIT_AI_QUERY, input);
+    /* Log the AI query with task type */
+    char log_msg[512];
+    snprintf(log_msg, sizeof(log_msg), "[%s] %s", ai_get_task_type_name(task), input);
+    audit_log(AUDIT_AI_QUERY, log_msg);
     
     /* Query AI with the new backend system */
     AIResponse *response = ai_query(input, context_query);
@@ -625,14 +636,112 @@ void ai_builtin(char **args) {
         _puts(COLOR_RESET);
         _puts("\nModel: ");
         _puts(ai_get_model());
-        _puts("\n\nType 'ai backend' to list all backends\n");
-        _puts("Type 'ai use <name>' to switch backend\n");
-        _puts("Type 'ai model <name>' to change model\n");
+        _puts("\n\nCommands:\n");
+        _puts("  ai backend     - List all backends\n");
+        _puts("  ai use <name>  - Switch backend\n");
+        _puts("  ai model <name>- Change model\n");
+        _puts("  ai models      - List Ollama models (if available)\n");
+        _puts("  ai detect      - Show model detection status\n");
         return;
     }
     
     if (strcmp(args[1], "backend") == 0 || strcmp(args[1], "backends") == 0) {
         ai_list_backends();
+        return;
+    }
+    
+    if (strcmp(args[1], "models") == 0) {
+        /* List Ollama models if backend is Ollama, otherwise show message */
+        if (ai_get_active_backend() == AI_BACKEND_OLLAMA || ai_ollama_check_available()) {
+            ai_list_ollama_models();
+        } else {
+            _puts(COLOR_YELLOW);
+            _puts("Ollama is not available. This command lists local Ollama models.\n");
+            _puts("To use Ollama, start the server with: ollama serve\n");
+            _puts(COLOR_RESET);
+        }
+        return;
+    }
+    
+    if (strcmp(args[1], "detect") == 0) {
+        /* Show model detection status */
+        _puts("\n");
+        _puts(COLOR_CYAN);
+        _puts("Model Detection Status:\n");
+        _puts(COLOR_RESET);
+        _puts("───────────────────────────\n");
+        
+        /* Check each backend */
+        _puts("Gemini:   ");
+        if (ai_backend_available(AI_BACKEND_GEMINI)) {
+            _puts(COLOR_GREEN);
+            _puts("✓ Available");
+        } else {
+            _puts(COLOR_RED);
+            _puts("✗ Not configured");
+        }
+        _puts(COLOR_RESET);
+        _puts("\n");
+        
+        _puts("OpenAI:   ");
+        if (ai_backend_available(AI_BACKEND_OPENAI)) {
+            _puts(COLOR_GREEN);
+            _puts("✓ Available");
+        } else {
+            _puts(COLOR_RED);
+            _puts("✗ Not configured");
+        }
+        _puts(COLOR_RESET);
+        _puts("\n");
+        
+        _puts("Claude:   ");
+        if (ai_backend_available(AI_BACKEND_CLAUDE)) {
+            _puts(COLOR_GREEN);
+            _puts("✓ Available");
+        } else {
+            _puts(COLOR_RED);
+            _puts("✗ Not configured");
+        }
+        _puts(COLOR_RESET);
+        _puts("\n");
+        
+        _puts("DeepSeek: ");
+        if (ai_backend_available(AI_BACKEND_DEEPSEEK)) {
+            _puts(COLOR_GREEN);
+            _puts("✓ Available");
+        } else {
+            _puts(COLOR_RED);
+            _puts("✗ Not configured");
+        }
+        _puts(COLOR_RESET);
+        _puts("\n");
+        
+        _puts("Ollama:   ");
+        if (ai_ollama_check_available()) {
+            _puts(COLOR_GREEN);
+            _puts("✓ Running");
+            OllamaModelList *list = ai_ollama_list_models();
+            if (list && list->count > 0) {
+                char count_str[32];
+                snprintf(count_str, sizeof(count_str), " (%d models)", list->count);
+                _puts(count_str);
+            }
+            ai_ollama_model_list_free(list);
+        } else {
+            _puts(COLOR_YELLOW);
+            _puts("○ Not running");
+        }
+        _puts(COLOR_RESET);
+        _puts("\n");
+        
+        _puts("───────────────────────────\n");
+        _puts("Active: ");
+        _puts(COLOR_GREEN);
+        _puts(ai_get_backend_name(ai_get_active_backend()));
+        _puts(COLOR_RESET);
+        _puts(" (");
+        _puts(ai_get_model());
+        _puts(")\n");
         return;
     }
     
@@ -675,7 +784,7 @@ void ai_builtin(char **args) {
         return;
     }
     
-    _puts("Unknown ai subcommand. Try: backend, use, model\n");
+    _puts("Unknown ai subcommand. Try: backend, use, model, models, detect\n");
 }
 
 /* Sandbox builtin command */
