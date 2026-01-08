@@ -49,7 +49,10 @@ void sig_handler(int sig_num)
 {
     if (sig_num == SIGINT)
     {
-        _puts("\n\033[0;91m#CortexCLI$\033[0m ");
+        _puts("\n");
+        rl_on_new_line();
+        rl_replace_line("", 0);
+        rl_redisplay();
     }
 }
 
@@ -257,12 +260,6 @@ void handle_ai_response(char *response) {
         if (strstr(line, "COMMAND:") == line) {
             char *cmd = line + 8;
             while (isspace(*cmd)) cmd++;
-            
-            _puts(COLOR_GREEN);
-            _puts("Executing: ");
-            _puts(cmd);
-            _puts("\n");
-            _puts(COLOR_RESET);
             
             execute_single_command(cmd);
         }
@@ -476,15 +473,6 @@ int main(void)
     
     display_logo();
     
-    /* Show current backend */
-    _puts(COLOR_CYAN);
-    _puts("AI Backend: ");
-    _puts(ai_get_backend_name(ai_get_active_backend()));
-    _puts(" (");
-    _puts(ai_get_model());
-    _puts(")\n");
-    _puts(COLOR_RESET);
-    
     /* Initialize history */
     hist.items = malloc(sizeof(char *) * MAX_HISTORY);
     hist.size = MAX_HISTORY;
@@ -540,17 +528,6 @@ int main(void)
         
         if (classification->is_natural_language) {
             /* Detected as natural language - route to AI */
-            _puts(COLOR_CYAN);
-            _puts("🤖 Detected: ");
-            _puts(lang_get_name(classification->language));
-            _puts(" (confidence: ");
-            char conf_str[16];
-            snprintf(conf_str, sizeof(conf_str), "%.0f%%", 
-                     classification->confidence * 100);
-            _puts(conf_str);
-            _puts(")\n");
-            _puts(COLOR_RESET);
-            
             handle_ai_command(input);
             classification_free(classification);
             freearv(arv);
@@ -585,28 +562,11 @@ int main(void)
                 arv[0] = full_path;
                 expand_tilde(arv);
 
-                /* Print command in green before execution */
-                _puts(COLOR_GREEN);
-                _puts("Executing: ");
-                for (int i = 0; arv[i]; i++)
-                {
-                    _puts(arv[i]);
-                    _puts(" ");
-                }
-                _puts("\n");
-                _puts(COLOR_RESET);
-
                 execute(arv);
             }
             else
             {
                 /* Command not found - try AI */
-                _puts(COLOR_YELLOW);
-                _puts("Command '");
-                _puts(arv[0]);
-                _puts("' not found. Trying AI...\n");
-                _puts(COLOR_RESET);
-                
                 handle_ai_command(input);
             }
             free_list(head);

@@ -22,11 +22,6 @@ void(*checkbuild(char **arv))(char **) {
 
     for(int i = 0; builtins[i].name; i++) {
         if(strcmp(arv[0], builtins[i].name) == 0) {
-            _puts(COLOR_BLUE);
-            _puts("Executing built-in: ");
-            _puts(arv[0]);
-            _puts("\n");
-            _puts(COLOR_RESET);
             return builtins[i].func;
         }
     }

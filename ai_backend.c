@@ -26,6 +26,7 @@ static AIBackendConfig backends[AI_BACKEND_COUNT] = {
 
 static AIBackendType active_backend = AI_BACKEND_GEMINI;
 static char current_model[256] = {0};
+static int curl_initialized = 0;
 
 /* CURL memory struct for response */
 struct MemoryChunk {
@@ -48,6 +49,13 @@ static size_t write_callback(void *contents, size_t size, size_t nmemb, void *us
     return realsize;
 }
 
+/* Helper function to set common CURL performance options */
+static void set_curl_performance_options(CURL *curl, long timeout) {
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);  /* Enable TCP keep-alive */
+    curl_easy_setopt(curl, CURLOPT_FORBID_REUSE, 0L);   /* Allow connection reuse */
+}
+
 /* Internal helper: Check if Ollama is available */
 static int ollama_check_available_internal(void) {
     CURL *curl;
@@ -58,7 +66,6 @@ static int ollama_check_available_internal(void) {
     char *host = getenv("OLLAMA_HOST");
     if (!host) host = "http://localhost:11434";
     
-    curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
     
     if (curl) {
@@ -81,7 +88,6 @@ static int ollama_check_available_internal(void) {
         free(chunk.memory);
     }
     
-    curl_global_cleanup();
     return available;
 }
 
@@ -126,7 +132,7 @@ static OllamaModelList *ollama_list_models_internal(void) {
     char *host = getenv("OLLAMA_HOST");
     if (!host) host = "http://localhost:11434";
     
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    
     curl = curl_easy_init();
     
     if (curl) {
@@ -178,7 +184,7 @@ static OllamaModelList *ollama_list_models_internal(void) {
         free(chunk.memory);
     }
     
-    curl_global_cleanup();
+    
     return list;
 }
 
@@ -196,6 +202,12 @@ static void ollama_model_list_free_internal(OllamaModelList *list) {
 
 /* Initialize backends */
 void ai_backend_init(void) {
+    /* Initialize CURL globally once */
+    if (!curl_initialized) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        curl_initialized = 1;
+    }
+    
     for (int i = 0; i < AI_BACKEND_COUNT; i++) {
         char *key = getenv(backends[i].env_key);
         backends[i].enabled = (key != NULL && strlen(key) > 0);
@@ -224,7 +236,11 @@ void ai_backend_init(void) {
 }
 
 void ai_backend_cleanup(void) {
-    /* Cleanup resources if needed */
+    /* Cleanup CURL globally once */
+    if (curl_initialized) {
+        curl_global_cleanup();
+        curl_initialized = 0;
+    }
 }
 
 AIBackendType ai_get_active_backend(void) {
@@ -604,7 +620,6 @@ static AIResponse *query_gemini(const char *prompt, const char *context) {
         strncpy(full_prompt, prompt, full_len - 1);
     }
     
-    curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
     
     if (curl) {
@@ -626,13 +641,14 @@ static AIResponse *query_gemini(const char *prompt, const char *context) {
         
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(headers, "Connection: keep-alive");
         
         curl_easy_setopt(curl, CURLOPT_URL, url);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        set_curl_performance_options(curl, 30L);
         
         res = curl_easy_perform(curl);
         
@@ -693,7 +709,6 @@ static AIResponse *query_gemini(const char *prompt, const char *context) {
         json_decref(root);
     }
     
-    curl_global_cleanup();
     free(full_prompt);
     return response;
 }
@@ -712,7 +727,6 @@ static AIResponse *query_openai(const char *prompt, const char *context) {
         return response;
     }
     
-    curl_global_init(CURL_GLOBAL_DEFAULT);
     curl = curl_easy_init();
     
     if (curl) {
@@ -737,6 +751,7 @@ static AIResponse *query_openai(const char *prompt, const char *context) {
         
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(headers, "Connection: keep-alive");
         char auth_header[256];
         snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", api_key);
         headers = curl_slist_append(headers, auth_header);
@@ -746,7 +761,7 @@ static AIResponse *query_openai(const char *prompt, const char *context) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        set_curl_performance_options(curl, 30L);
         
         res = curl_easy_perform(curl);
         
@@ -800,7 +815,7 @@ static AIResponse *query_openai(const char *prompt, const char *context) {
         json_decref(root);
     }
     
-    curl_global_cleanup();
+    
     return response;
 }
 
@@ -818,7 +833,7 @@ static AIResponse *query_claude(const char *prompt, const char *context) {
         return response;
     }
     
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    
     curl = curl_easy_init();
     
     if (curl) {
@@ -841,6 +856,7 @@ static AIResponse *query_claude(const char *prompt, const char *context) {
         
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(headers, "Connection: keep-alive");
         char auth_header[256];
         snprintf(auth_header, sizeof(auth_header), "x-api-key: %s", api_key);
         headers = curl_slist_append(headers, auth_header);
@@ -851,7 +867,7 @@ static AIResponse *query_claude(const char *prompt, const char *context) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        set_curl_performance_options(curl, 30L);
         
         res = curl_easy_perform(curl);
         
@@ -904,7 +920,7 @@ static AIResponse *query_claude(const char *prompt, const char *context) {
         json_decref(root);
     }
     
-    curl_global_cleanup();
+    
     return response;
 }
 
@@ -922,7 +938,7 @@ static AIResponse *query_deepseek(const char *prompt, const char *context) {
         return response;
     }
     
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    
     curl = curl_easy_init();
     
     if (curl) {
@@ -945,6 +961,7 @@ static AIResponse *query_deepseek(const char *prompt, const char *context) {
         
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(headers, "Connection: keep-alive");
         char auth_header[256];
         snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", api_key);
         headers = curl_slist_append(headers, auth_header);
@@ -954,7 +971,7 @@ static AIResponse *query_deepseek(const char *prompt, const char *context) {
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        set_curl_performance_options(curl, 30L);
         
         res = curl_easy_perform(curl);
         
@@ -1008,7 +1025,7 @@ static AIResponse *query_deepseek(const char *prompt, const char *context) {
         json_decref(root);
     }
     
-    curl_global_cleanup();
+    
     return response;
 }
 
@@ -1022,7 +1039,7 @@ static AIResponse *query_ollama(const char *prompt, const char *context) {
     char *host = getenv("OLLAMA_HOST");
     if (!host) host = "http://localhost:11434";
     
-    curl_global_init(CURL_GLOBAL_DEFAULT);
+    
     curl = curl_easy_init();
     
     if (curl) {
@@ -1048,13 +1065,14 @@ static AIResponse *query_ollama(const char *prompt, const char *context) {
         
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(headers, "Connection: keep-alive");
         
         curl_easy_setopt(curl, CURLOPT_URL, url);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);  /* Longer timeout for local */
+        set_curl_performance_options(curl, 120L);  /* Longer timeout for local */
         
         res = curl_easy_perform(curl);
         
@@ -1095,7 +1113,7 @@ static AIResponse *query_ollama(const char *prompt, const char *context) {
         free(full_prompt);
     }
     
-    curl_global_cleanup();
+    
     return response;
 }
 
@@ -1141,12 +1159,6 @@ static AIResponse *ai_query_internal(const char *prompt, const char *context,
         }
         
         if (fallback < AI_BACKEND_COUNT) {
-            _puts(COLOR_YELLOW);
-            _puts("Primary backend failed, trying fallback: ");
-            _puts(ai_get_backend_name(fallback));
-            _puts("\n");
-            _puts(COLOR_RESET);
-            
             ai_response_free(response);
             AIBackendType old_backend = active_backend;
             char old_model[256];
